@@ -759,3 +759,193 @@ Tests first (3 red), then:
 **Manual changes**
 
 None this turn.
+
+---
+
+## 015 — Frontend: SymbolSearch component
+
+**Prompt**
+
+> frontend/src/api/types.ts, api/client.ts, and hooks/useIntradayData.ts now exist.
+> Read them and according to it create SymbolSearch.tsx — form submit for the symbol,
+> onSubmit: (symbol: string), never submits an empty string, disabled while busy,
+> removes whitespace from front and end of string.
+
+**Intent**
+
+Add the input control, matching the conventions and division of labour already set by
+the API/hook files.
+
+**Response summary**
+
+Read the three files: no-semicolon / single-quote / 2-space style, inline `type`
+imports (`verbatimModuleSyntax`), named exports, and both `client.ts` and
+`useIntradayData.ts` already do `.trim().toUpperCase()` + empty-guard.
+
+- `src/components/SymbolSearch.tsx` — controlled `<input>`; `symbol = value.trim()`;
+  `canSubmit = !busy && symbol !== ''`; `handleSubmit` `preventDefault()`s and returns
+  unless `canSubmit`, else `onSubmit(symbol)`. `<input disabled={busy}>`,
+  `<button disabled={!canSubmit}>`. `role="search"`, labelled input. Does **not**
+  upper-case (the API layer owns casing) and doesn't re-implement the hook's guard.
+- `src/components/SymbolSearch.test.tsx` — 3 `it`s: `'  tsla  '` → `onSubmit('tsla')`
+  once; empty / whitespace-only + Enter → never called, button disabled; `busy` →
+  input + button disabled.
+- `src/test/setup.ts` — added `afterEach(cleanup)` from `@testing-library/react`.
+
+`npx tsc -b` clean; `npm test` 4/4; `npm run lint` 0 errors (1 pre-existing warning in
+the generated `public/mockServiceWorker.js`).
+
+**Kept / changed / rejected**
+
+- **Rejected** upper-casing / an empty-string guard inside the component beyond the
+  submit gate — `client.ts` and `useIntradayData.ts` already normalise; duplicating it
+  invites drift. The component's job is purely trim + don't-submit-blank + busy.
+- **Added, beyond the prompt:** disable the submit button whenever `value.trim()` is
+  blank (not just the handler guard) so Enter and click are both covered; a colocated
+  test; `role="search"` + `<label>` for a11y.
+- **Fixed a harness gap:** `src/test/setup.ts` had no `cleanup()`. Vitest isn't run
+  with `globals: true`, so RTL never auto-unmounts between tests — the first
+  multi-`it` component file (this one) failed with "multiple elements with role
+  textbox". `App.test.tsx` (single test) had masked it. One-line fix alongside the
+  existing `server.resetHandlers()`.
+
+**Manual changes** *(found on disk, not mine)*
+
+- `frontend/src/api/{types,client}.ts` and `hooks/useIntradayData.ts` were added by the
+  user: `DailySummary`, typed `SymbolNotFoundError` / `RequestFailedError`;
+  `fetchIntraday` (env-configurable `VITE_API_BASE_URL`, `trim().toUpperCase()`,
+  404 → `SymbolNotFoundError`); `useIntradayData` (discriminated-union state, stale-
+  response guard via a `requestId` ref).
+
+---
+
+## 016 — Frontend: SummaryTable component
+
+**Prompt**
+
+> create src/components/SummaryTable.tsx — { symbol: string; rows: DailySummary[] }.
+> table with a caption containing the symbol, columns Day / Low avg / High avg /
+> Volume; prices via Intl.NumberFormat at 4 fraction digits, volume grouped.
+
+**Response summary**
+
+- `src/components/SummaryTable.tsx` — `<table>` with `<caption>Daily intraday summary
+  for {symbol}</caption>` (also the a11y name), `<th scope="col">` Day / Low avg /
+  High avg / Volume, `<th scope="row">` per `day`. Two module-scope
+  `Intl.NumberFormat`s: `priceFormat` (`min`/`maxFractionDigits: 4`) and `volumeFormat`
+  (`useGrouping: true`, `maxFractionDigits: 0`). Default locale.
+- `src/components/SummaryTable.test.tsx` — 4 `it`s: caption carries the symbol; the 4
+  column headers + a rowheader per day; `40.2958` / `49.7534` / `1.0000` /
+  `49,073,348` cells; empty-state row for `rows={[]}`.
+
+`npx tsc -b` clean; `npm test` 8/8; `npm run lint` 0 errors.
+
+**Kept / changed / rejected**
+
+- **`Intl.NumberFormat` at module scope**, not per render — the formatter is the
+  expensive part; it's built once.
+- **Added, beyond the prompt:** a `rows.length === 0` → single `colSpan={4}` "No data
+  available for {symbol}." row. The API returns `[]` for a valid symbol with no data
+  in range and `useIntradayData`'s `success` state passes that through unchanged, so a
+  headers-only table would read as broken. Cheap to remove.
+- Formatting-assertion tests assume the runtime default locale resolves to `en-US`
+  (Node's bundled ICU default). A non-en-US CI would change the grouping / decimal
+  glyphs; acceptable for a take-home, noted here rather than pinning the component to a
+  locale (which would be wrong for a real app).
+
+**Manual changes**
+
+None.
+
+---
+
+## 017 — Frontend review
+
+**Prompt**
+
+> review frontend files and check for errors or issues
+
+**Response summary**
+
+Ran `tsc -b`, `eslint`, `vitest`, `vite build` — all green (8/8). Reviewed every
+`src/**` file plus config. Nothing broken. Findings:
+
+- **`tsconfig.app.json`/`tsconfig.node.json` have no `"strict"`.** Probed with a temp
+  `extends` + `strict:true` → **0 errors**; code is already strict-clean, config just
+  doesn't enforce it. One-line fix.
+- **Bundle 561 kB / 167 kB gzip, single chunk** (`vite build` warns); recharts is the
+  bulk — `lazy(() => import('./SummaryChart'))` splits it out.
+- **No `.env.example`** for `VITE_API_BASE_URL`.
+- Minor: `IntradayResults` switch lacks a `never` exhaustiveness `default`;
+  `useIntradayData` doesn't `AbortController` the fetch (stale-*state* is guarded);
+  `mocks/handlers.ts` hard-codes the `:5136` origin (breaks if `VITE_API_BASE_URL`
+  set); `client.ts` re-throws without `{ cause }` and casts `as DailySummary[]`
+  unchecked; `client.ts`+hook both `.trim().toUpperCase()`; backend 400 → generic
+  error message; no `ErrorBoundary`; `App.test.tsx` is a thin heading check;
+  `SymbolSearch` has no `maxLength={15}`; lone lint warning is in generated
+  `public/mockServiceWorker.js` (add to `globalIgnores`).
+- Verified `SummaryChart` renders in jsdom **without throwing** despite no
+  `ResizeObserver` (empty 0×0 chart) — a success-path test asserts the `<figure>` /
+  table, not chart internals.
+
+Affirmed as sound: the hook's discriminated-union + `requestId` guard;
+`role="status"`/`role="alert"`; chart+table accessibility pairing; module-scope
+`Intl.NumberFormat`; contract match with the backend (shape, 404, CORS origin, base
+URL ↔ launch profile).
+
+**Kept / changed / rejected**
+
+- Review only — no code changed. Findings handed back for the user to prioritise.
+
+**Manual changes** *(found on disk, not mine)*
+
+- User added `App.tsx` (composes `useIntradayData` + `SymbolSearch` +
+  `IntradayResults`), `components/IntradayResults.tsx` (union → idle/loading/error/
+  success views), `components/SummaryChart.tsx` (recharts `LineChart` of low/high avg,
+  `<figure>` with `aria-label` + `data-testid`), and filled `mocks/handlers.ts`
+  (`sampleRows` + a `GET :5136/api/stocks/:symbol/intraday` handler).
+
+---
+
+## 018 — CORS blocks the :5174 dev origin
+
+**Prompt**
+
+> inspect flags this: Access to fetch at 'http://localhost:5136/api/stocks/AAPL/intraday'
+> from origin 'http://localhost:5174' has been blocked by CORS policy: No
+> 'Access-Control-Allow-Origin' header is present … net::ERR_FAILED
+
+**Intent**
+
+Fix the CORS failure. Vite fell forward to :5174 (5173 was in use); the entry-014
+policy hard-codes only `http://localhost:5173`.
+
+**Response summary**
+
+- `CorsTests.cs` — the single `[Fact]` became a `[Theory]` over `http://localhost:5173`
+  and `http://localhost:5174`. Ran: 5173 green, 5174 red (reproduced the report).
+- `Program.cs` — CORS origins now come from `Cors:AllowedOrigins`
+  (`GetSection(...).Get<string[]>() is { Length: > 0 } ? … : ["…5173", "…5174"]`) fed to
+  `policy.WithOrigins(corsOrigins)`.
+- `appsettings.json` — added `"Cors": { "AllowedOrigins": ["http://localhost:5173",
+  "http://localhost:5174"] }`.
+
+`dotnet build` 0 warnings; `dotnet test` **26/26**. Backend must be restarted for the
+config to load.
+
+**Kept / changed / rejected**
+
+- **Config-driven allow-list** rather than (a) just appending `:5174` to the literal —
+  the port can drift further; config lets ops add more without a rebuild — or (b)
+  `AllowAnyOrigin()` / a `SetIsOriginAllowed(localhost)` wildcard — looser than the
+  entry-014 decision to keep the policy scoped, and only defensible because the
+  endpoint is anonymous read-only.
+- Kept a code fallback alongside the `appsettings.json` value so a missing/empty
+  section can't crash startup (`WithOrigins(null)` throws) or silently allow nothing.
+- Suggested (frontend, not done) `server: { port: 5173, strictPort: true }` in
+  `vite.config.ts` so Vite fails loudly instead of drifting.
+
+**Manual changes**
+
+None. (Backend work from entries 013–014 was committed by the user as `7953bac
+"cors added"` between turns; the frontend from 015–016 remains uncommitted.)

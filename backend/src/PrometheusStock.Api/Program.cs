@@ -13,10 +13,16 @@ builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
 
+// Vite serves the SPA from 5173, or the next free port (5174, …) when it's taken.
+string[] corsOrigins =
+    builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() is { Length: > 0 } configured
+        ? configured
+        : ["http://localhost:5173", "http://localhost:5174"];
+
 builder.Services.AddCors(options => options.AddPolicy(
     FrontendCorsPolicy,
     policy => policy
-        .WithOrigins("http://localhost:5173")
+        .WithOrigins(corsOrigins)
         .AllowAnyHeader()
         .AllowAnyMethod()));
 
