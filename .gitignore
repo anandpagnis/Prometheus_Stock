@@ -1,0 +1,124 @@
+# ---------------------------------------------------------------------------
+# OS / editor
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+.idea/
+.vs/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+*.sw?
+*~
+
+# Legacy Visual Studio JS project files
+*.ntvs*
+*.njsproj
+
+# ---------------------------------------------------------------------------
+# .NET / backend
+# ---------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+build/
+bld/
+
+# Test / coverage results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage/
+*.coverage
+*.coveragexml
+TestResults/
+BenchmarkDotNet.Artifacts/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+# Rider / ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# EF Core
+*.db
+*.db-shm
+*.db-wal
+
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+build/
+.vite/
+
+# Test / coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# Caches
+.eslintcache
+.cache/
+*.tsbuildinfo
+.npm/
+
+# ---------------------------------------------------------------------------
+# Logs
+# ---------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---------------------------------------------------------------------------
+# Environment / secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.local
+secrets.json
+appsettings.*.local.json

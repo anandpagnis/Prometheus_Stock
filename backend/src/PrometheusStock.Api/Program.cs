@@ -1,7 +1,6 @@
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
@@ -20,4 +19,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Liveness probe. Deliberately dependency-free so it stays cheap and always available.
+app.MapGet("/health", () => TypedResults.Ok(new { status = "healthy" }))
+   .WithName("Health");
+
 app.Run();
+
+// Exposed so the test project can bootstrap the app with WebApplicationFactory<Program>.
+public partial class Program;
