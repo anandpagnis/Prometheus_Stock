@@ -13,9 +13,10 @@ namespace PrometheusStock.Tests.Integration;
 /// <summary>
 /// Exercises <c>YahooFinanceClient</c> end to end: a real <c>AddMarketData</c> container
 /// with <c>YahooFinance:BaseUrl</c> pointed at a WireMock stand-in for Yahoo, so the
-/// typed <see cref="System.Net.Http.HttpClient"/> and its resilience pipeline are in the
-/// loop. Written test-first — the client is still a stub, so every case here is red
-/// until it maps payloads and translates failures.
+/// typed <see cref="System.Net.Http.HttpClient"/> and the real DI wiring are in the loop.
+/// The MVP client has no retry layer, so every call is expected to hit the upstream
+/// exactly once. Written test-first — the client is still a stub, so every case here is
+/// red until it maps payloads and translates failures.
 /// </summary>
 public sealed class YahooFinanceClientTests : IDisposable
 {
@@ -26,6 +27,14 @@ public sealed class YahooFinanceClientTests : IDisposable
     /// <summary>Real TSLA capture (5d, 15m): 117 bars, quote indices 5, 6 and 40 nulled.</summary>
     private static readonly string FixturePath =
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "yahoo-chart-5d.json");
+
+    /// <summary>
+    /// Hand-authored: 5 bars straddling the 02 Nov 2025 America/New_York EDT→EST change.
+    /// <c>meta.gmtoffset</c> is deliberately the EDT value for every bar, so a client that
+    /// trusts the scalar rather than converting each timestamp in the exchange zone fails.
+    /// </summary>
+    private static readonly string DstFixturePath =
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "yahoo-chart-dst.json");
 
     /// <summary>Yahoo's "unknown symbol" envelope: HTTP 200 but a null result plus an error node.</summary>
     private const string NullResultEnvelope =
@@ -61,6 +70,32 @@ public sealed class YahooFinanceClientTests : IDisposable
     }
 
     [Fact]
+    public async Task Each_timestamp_is_converted_in_the_exchange_zone_across_a_dst_change()
+    {
+        StubChart(status: 200, body: await File.ReadAllTextAsync(DstFixturePath));
+        IStockDataProvider provider = CreateProvider();
+
+        IntradayBar[] bars =
+        [
+            .. (await provider.GetIntradayBarsAsync(Symbol, CancellationToken.None))
+                .OrderBy(bar => bar.Timestamp),
+        ];
+
+        bars.Length.ShouldBe(5);
+
+        TimeSpan edt = TimeSpan.FromHours(-4);
+        TimeSpan est = TimeSpan.FromHours(-5);
+        bars[0].Timestamp.Offset.ShouldBe(edt); // 03:45 UTC — before the 06:00 UTC change
+        bars[1].Timestamp.Offset.ShouldBe(edt); // 05:45 UTC
+        bars[2].Timestamp.Offset.ShouldBe(est); // 06:15 UTC — after the change
+        bars[3].Timestamp.Offset.ShouldBe(est); // 06:30 UTC
+        bars[4].Timestamp.Offset.ShouldBe(est); // 07:00 UTC
+
+        // bar 0 is 23:45 EDT on 01 Nov, so its local calendar day is the 1st, not the 2nd.
+        DateOnly.FromDateTime(bars[0].Timestamp.Date).ShouldBe(new DateOnly(2025, 11, 1));
+    }
+
+    [Fact]
     public async Task Sends_configured_range_interval_and_user_agent()
     {
         StubChart(status: 200, body: await File.ReadAllTextAsync(FixturePath));
@@ -90,6 +125,7 @@ public sealed class YahooFinanceClientTests : IDisposable
             () => provider.GetIntradayBarsAsync(Symbol, CancellationToken.None));
 
         ex.Symbol.ShouldBe(Symbol);
+        ChartRequestCount.ShouldBe(1); // a 404 is surfaced, never retried
     }
 
     [Fact]
@@ -104,30 +140,18 @@ public sealed class YahooFinanceClientTests : IDisposable
         ex.Symbol.ShouldBe(Symbol);
     }
 
-    [Fact]
-    public async Task A_404_is_not_retried()
-    {
-        StubChart(status: 404, body: "Not Found", contentType: "text/plain");
-        IStockDataProvider provider = CreateProvider();
-
-        await Should.ThrowAsync<SymbolNotFoundException>(
-            () => provider.GetIntradayBarsAsync(Symbol, CancellationToken.None));
-
-        ChartRequestCount.ShouldBe(1);
-    }
-
     // -- upstream failure ---------------------------------------------------------
 
     [Fact]
-    public async Task Repeated_500_is_retried_then_translated_to_UpstreamException()
+    public async Task A_500_is_translated_to_UpstreamException_after_a_single_request()
     {
-        StubChart(status: 500, body: "upstream boom", contentType: "text/plain");
+        StubChart(status: 500, body: "server error", contentType: "text/plain");
         IStockDataProvider provider = CreateProvider();
 
         await Should.ThrowAsync<UpstreamException>(
             () => provider.GetIntradayBarsAsync(Symbol, CancellationToken.None));
 
-        ChartRequestCount.ShouldBeGreaterThan(1); // the resilience pipeline retried
+        ChartRequestCount.ShouldBe(1); // no retry layer — the failure is surfaced immediately
     }
 
     [Fact]
@@ -150,8 +174,6 @@ public sealed class YahooFinanceClientTests : IDisposable
             ["YahooFinance:UserAgent"] = TestUserAgent,
             ["YahooFinance:Range"] = "1mo",
             ["YahooFinance:Interval"] = "15m",
-            // Real retry loop, ~10ms backoff so the 500 case stays sub-second.
-            ["YahooFinance:Resilience:Retry:Delay"] = "00:00:00.010",
         };
 
         foreach ((string key, string value) in overrides)

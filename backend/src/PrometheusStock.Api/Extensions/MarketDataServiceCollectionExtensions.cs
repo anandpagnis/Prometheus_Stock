@@ -26,6 +26,7 @@ public static class MarketDataServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IOptions<YahooFinanceOptions>>().Value;
 
             httpClient.BaseAddress = new Uri(options.BaseUrl);
+            httpClient.Timeout = TimeSpan.FromSeconds(15);  
             httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
             httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
         });
