@@ -5,8 +5,8 @@ namespace PrometheusStock.Api.MarketData.Yahoo;
 /// <summary>
 /// <see cref="IStockDataProvider" /> backed by Yahoo Finance's
 /// <c>v8/finance/chart</c> endpoint. Registered as a typed <see cref="HttpClient" />
-/// in <c>AddMarketData</c>, where the base address, timeout and User-Agent are
-/// configured from <see cref="YahooFinanceOptions" />.
+/// in <c>AddMarketData</c>, where the base address and User-Agent are configured
+/// from <see cref="YahooFinanceOptions" />.
 /// </summary>
 public sealed class YahooFinanceClient(HttpClient httpClient, IOptions<YahooFinanceOptions> options)
     : IStockDataProvider

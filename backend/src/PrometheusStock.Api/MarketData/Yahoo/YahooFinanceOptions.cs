@@ -25,9 +25,6 @@ public sealed class YahooFinanceOptions
     [MinLength(1)]
     public string UserAgent { get; init; } = string.Empty;
 
-    /// <summary>Per-request timeout for a single Yahoo call.</summary>
-    public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(10);
-
     /// <summary>Look-back window passed as the <c>range</c> query parameter. Fixed at <c>1mo</c> for the MVP.</summary>
     [Required]
     public string Range { get; init; } = "1mo";

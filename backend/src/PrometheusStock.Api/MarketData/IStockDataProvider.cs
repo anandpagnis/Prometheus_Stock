@@ -17,5 +17,8 @@ public interface IStockDataProvider
     /// <exception cref="SymbolNotFoundException">
     /// The source has no data for <paramref name="symbol" />.
     /// </exception>
+    /// <exception cref="UpstreamException">
+    /// The source failed: a non-success status, an unparseable body, or retries exhausted.
+    /// </exception>
     Task<IReadOnlyList<IntradayBar>> GetIntradayBarsAsync(string symbol, CancellationToken cancellationToken);
 }

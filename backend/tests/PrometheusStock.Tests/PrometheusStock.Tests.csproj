@@ -26,5 +26,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PrometheusStock.Api\PrometheusStock.Api.csproj" />
   </ItemGroup>
+  
+  <ItemGroup>
+  <None Update="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+</ItemGroup>
 
 </Project>
