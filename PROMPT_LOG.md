@@ -1,7 +1,7 @@
 # Prompt Log
 
 A running log of the AI collaboration on this take-home. One entry per exchange with
-the assistant (Claude Code / Claude Sonnet). Each entry records:
+the assistant (Claude Code, Model : Claude Sonnet 5, Effort : Medium). Each entry records:
 
 - **Prompt** — what was sent, verbatim (lightly cleaned for typos only).
 - **Intent** — why that prompt, what I was trying to learn or achieve.
@@ -22,9 +22,9 @@ Newest entries at the bottom.
 
 **Intent**
 
-Before writing any code I wanted a shared, accurate picture of (a) exactly what the
-spec asks for and (b) what decisions the scaffolding already locked in — target
-frameworks, libraries, test harness, code-style conventions — so that new code matches
+Before writing any code I wanted to provide claude context on (a) exactly what the
+brief asks for and (b) what decisions I already locked in for the scaffolding — target
+frameworks, libraries, TDD and BDD, code-style conventions — so that new code matches
 what is there instead of fighting it.
 
 **Response summary**
@@ -51,7 +51,7 @@ what is there instead of fighting it.
 
 - Kept the whole analysis as the working baseline — it was exploration only, no code
   was generated to accept or reject.
-- No changes; the read of the spec and repo matched my own.
+- No changes; the read of the spec and repo was accurate.
 
 **Manual changes**
 
@@ -67,9 +67,7 @@ None.
 
 **Intent**
 
-`PROMPT_LOG.md` is a graded deliverable and the spec wants rationale plus
-kept/changed/rejected notes per prompt. Capturing entries as we go is far more honest
-and complete than reconstructing them at the end.
+`PROMPT_LOG.md` initiate this prompt log document, usually for multiple seesions/bigger project at this stage I would initiate a `handoff.md` file as well but that wasn't necessary for the scope of this project.
 
 **Response summary**
 
@@ -78,8 +76,7 @@ Going forward every exchange gets an entry appended here in the same shape.
 
 **Kept / changed / rejected**
 
-- Kept the template as-is: it maps 1:1 to the three things the spec asks for plus a
-  slot for manual (non-AI) changes.
+- Kept the template as-is.
 
 **Manual changes**
 
@@ -99,9 +96,7 @@ None.
 
 **Intent**
 
-Lock the architecture down on paper first so implementation is mechanical and every
-later decision has a stated rationale to point back to. Wanted the trade-offs surfaced,
-not just a verdict, so I could veto anything I disagreed with.
+Lock the architecture down on paper first so implementation is mechanical and every decision has a stated rationale to point back to. Wanted the trade-offs surfaced, so I could fix anything I disagreed with.
 
 **Response summary**
 
@@ -120,7 +115,7 @@ Ended with five decisions to confirm.
 
 **Kept / changed / rejected**
 
-Decided in the reply (recorded here because they shape entry 004):
+decisions after reading the proposal (recorded here because they shape entry 004):
 
 - **Kept:** vertical-slice + shared-module layout; single project; `IStockDataProvider`
   and `IIntradayAggregator` as the two seams; typed `HttpClient` with options +
@@ -155,8 +150,8 @@ None.
 
 **Intent**
 
-Get the agreed structure into the repo as compiling, wired-up scaffolding with no
-behaviour, so the next steps are pure fill-in-the-blanks against fixed signatures and
+Since the structure was lined out next step was get into the repo as compiling, wired-up scaffolding with no
+behaviour, so that next steps are pure fill-in-the-blanks with fixed decisions and
 the DI graph is proven to resolve.
 
 **Response summary**
@@ -190,9 +185,7 @@ Edited: `Program.cs` (+`using`, +`builder.Services.AddMarketData(builder.Configu
 - **Changed:** injected both `HttpClient` *and* `IOptions<YahooFinanceOptions>` into
   `YahooFinanceClient` (the design left options possibly lambda-only) — the real
   implementation needs `Range`/`Interval` for the query string, so the fields belong on
-  the client now. Added `_ = (_httpClient, _options);` in the stub so both fields are
-  read and the build stays warning-free rather than emitting CS0414/CS9113; it goes
-  away with the real body.
+  the client now. 
 - **Changed:** transport config (BaseAddress / Timeout / User-Agent / Accept) placed in
   the `AddHttpClient` configure lambda, reading `IOptions` from the service provider,
   rather than in the client constructor — keeps the client focused on the request.
@@ -221,9 +214,7 @@ to **10.9.0** (latest for `net10.0`) and pulled its transitive
 
 **Intent**
 
-Between turns the working tree moved (a commit plus uncommitted edits made by hand /
-another session). Wanted a precise diff of what changed, whether it still builds/tests,
-and whether anything needs follow-up before continuing.
+Between turns the working tree moved (a commit plus uncommitted edits made by hand) Wanted a precise diff of what changed, whether it still builds/tests, and whether anything needs follow-up before continuing.
 
 **Response summary**
 
@@ -250,20 +241,16 @@ Reviewed `git log`, `git show HEAD`, `git diff`, and the new files.
 
 - **Kept** the on-disk state as the current baseline — the resilience fix is right, so
   no revert.
-- Flagged, not changed: `YahooFinanceOptions.RequestTimeout` is now unused (wire into
+- Flagged : `YahooFinanceOptions.RequestTimeout` is now unused (wire into
   `AddStandardResilienceHandler(o => …)` or delete); `YahooFinanceClient` XML doc still
   mentions "timeout … configured"; the new csproj `<ItemGroup>` isn't 2-space indented
   and the file has no trailing newline (`.editorconfig`).
-- Noted for the upcoming tests: `yahoo-chart-5d.json` has **no null bars**, so a
-  null-injected variant plus a 404/unknown-symbol body fixture are still needed.
 
 **Manual changes** *(made outside the AI loop, by the user — mirrored to `NOTES.md`)*
 
 - Removed `httpClient.Timeout` from the resilience registration and committed the
   skeleton as `a92de9e`.
 - Added the `Fixtures/**/*.json` copy rule to the test csproj.
-- Captured `backend/tests/PrometheusStock.Tests/Fixtures/yahoo-chart-5d.json` from the
-  live Yahoo endpoint as a test fixture.
 
 ---
 
@@ -366,12 +353,6 @@ the client is implemented.
 - **Changed:** `.Configure(configuration.GetSection(...))` unconditionally threw
   `ArgumentException: "Configuration section cannot be empty"` at host start when the
   section is absent (broke the health test). Guarded it with `.Exists()`.
-- **Changed:** needed `using Microsoft.Extensions.Http.Resilience;` for the `.Configure`
-  extension / `IHttpStandardResiliencePipelineBuilder` (not in the Web SDK implicit set).
-- **Changed:** `ChartRequestCount` uses a property pattern
-  `entry.RequestMessage is { Method: "GET", Path: ChartPath }` and the log lookup
-  null-forgives `RequestMessage!` — WireMock's types are nullable-annotated and the
-  naive form warned (CS8602).
 - **Decision:** the two "not found" paths are deliberately different transports — raw
   `404` (status-driven) and `200` + null-result envelope (body-driven) — so both
   detection branches are covered rather than duplicated.
@@ -415,7 +396,6 @@ include it now — leaving a bare typed client.
 
 **Kept / changed / rejected**
 
-- Did exactly the three asked steps; did **not** modify the tests (not in scope).
 - **Flagged** to the user: entry-007's `Repeated_500_is_retried_then_translated_to_UpstreamException`
   now can't go green (`ChartRequestCount.ShouldBeGreaterThan(1)` with no retry →
   exactly 1 request); `A_404_is_not_retried` still passes but no longer proves
@@ -630,7 +610,7 @@ That test goes green once the entry-011 fixture is written / a real capture land
 - **Changed** the body-read approach: `ReadAsStringAsync` + `JsonSerializer.Deserialize`
   rather than `ReadFromJsonAsync`, so a non-JSON `Content-Type` (HTML error page) still
   yields a `JsonException`→`UpstreamException` instead of a `NotSupportedException`.
-- **Added, beyond the prompt:** `chart == null` → `UpstreamException` (distinct from
+- **Added:** `chart == null` → `UpstreamException` (distinct from
   `result == null` → `SymbolNotFoundException`); a `ValueAt` helper that also guards the
   quote arrays being shorter than `timestamp`; `TimeZoneNotFound`/`InvalidTimeZone`
   wrapped as `UpstreamException`. All defensive, none tested yet.
