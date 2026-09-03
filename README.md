@@ -1,4 +1,4 @@
-# Prometheus Stock
+# Prometheus Stock Dashboard - Take Home Assessment - Anand Pagnis
 
 A full-stack app that reads intraday market data from Yahoo Finance, rolls it up by
 trading day, and shows it as a table and a chart.
