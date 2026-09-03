@@ -1,6 +1,13 @@
+import { lazy, Suspense } from 'react'
+
 import type { IntradayState } from '../hooks/useIntradayData'
-import { SummaryChart } from './SummaryChart'
 import { SummaryTable } from './SummaryTable'
+
+// recharts is large and only needed on the success branch — keep it out of the
+// initial bundle.
+const SummaryChart = lazy(() =>
+  import('./SummaryChart').then((module) => ({ default: module.SummaryChart })),
+)
 
 export function IntradayResults({ state }: { state: IntradayState }) {
   switch (state.status) {
@@ -21,9 +28,15 @@ export function IntradayResults({ state }: { state: IntradayState }) {
         <p>No intraday data available for {state.symbol}.</p>
       ) : (
         <>
-          <SummaryChart symbol={state.symbol} rows={state.rows} />
+          <Suspense fallback={<p>Loading chart…</p>}>
+            <SummaryChart symbol={state.symbol} rows={state.rows} />
+          </Suspense>
           <SummaryTable symbol={state.symbol} rows={state.rows} />
         </>
       )
+    default: {
+      const exhaustive: never = state
+      return exhaustive
+    }
   }
 }

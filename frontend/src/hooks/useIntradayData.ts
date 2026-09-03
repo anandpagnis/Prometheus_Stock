@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { fetchIntraday } from '../api/client'
+import { fetchIntraday, normalizeSymbol } from '../api/client'
 import { type DailySummary, SymbolNotFoundError } from '../api/types'
 
 export type IntradayState =
@@ -13,7 +13,7 @@ export function useIntradayData() {
   const requestId = useRef(0)
 
   const load = useCallback((raw: string) => {
-    const symbol = raw.trim().toUpperCase()
+    const symbol = normalizeSymbol(raw)
     if (symbol === '') return
 
     const id = ++requestId.current

@@ -33,6 +33,7 @@ export function SymbolSearch({ onSubmit, busy = false }: SymbolSearchProps) {
         onChange={(event) => setValue(event.target.value)}
         placeholder="e.g. TSLA"
         autoComplete="off"
+        maxLength={15}
         disabled={busy}
       />
       <button type="submit" disabled={!canSubmit}>

@@ -949,3 +949,114 @@ config to load.
 
 None. (Backend work from entries 013–014 was committed by the user as `7953bac
 "cors added"` between turns; the frontend from 015–016 remains uncommitted.)
+
+---
+
+## 019 — Frontend review fixes
+
+**Prompt**
+
+> tsconfig.app.json + tsconfig.node.json: "strict": true. eslint.config.js: ignore
+> public/mockServiceWorker.js. client.ts: treat 400 like 404 → SymbolNotFoundError;
+> move trim().toUpperCase() here only (export normalizeSymbol); drop it from
+> useIntradayData.ts. IntradayResults.tsx: default: with never assert; code-split the
+> chart via lazy() + <Suspense>; confirm vite build drops the 500 kB warning.
+> SymbolSearch.tsx: maxLength={15}. mocks/handlers.ts: URL → */api/stocks/:symbol/
+> intraday. App.test.tsx: replace with 3 MSW integration tests (server.use each):
+> submit → table; 404 → alert names the symbol; 502 → generic alert.
+
+**Intent**
+
+Apply the entry-017 review findings.
+
+**Response summary**
+
+- `tsconfig.app.json` / `tsconfig.node.json` — `"strict": true` in the Linting block.
+  `tsc -b` exit 0, zero new errors (the code was already strict-clean).
+- `eslint.config.js` — `globalIgnores(['dist', 'public/mockServiceWorker.js'])`.
+  `npm run lint` now 0 problems.
+- `api/client.ts` — `export function normalizeSymbol(s)` = `s.trim().toUpperCase()`;
+  `fetchIntraday` calls it; `if (response.status === 404 || response.status === 400)`
+  → `SymbolNotFoundError`.
+- `hooks/useIntradayData.ts` — imports `normalizeSymbol`, `const symbol =
+  normalizeSymbol(raw)`; no direct `.trim().toUpperCase()`.
+- `components/IntradayResults.tsx` — static `SummaryChart` import replaced with
+  `lazy(() => import('./SummaryChart').then(m => ({ default: m.SummaryChart })))`;
+  success branch wraps `<SummaryChart>` in `<Suspense fallback={<p>Loading chart…</p>}>`
+  with `<SummaryTable>` left outside it; `default:` case
+  `{ const exhaustive: never = state; return exhaustive }`.
+- `components/SymbolSearch.tsx` — `maxLength={15}` on the input.
+- `mocks/handlers.ts` — `http.get('*/api/stocks/:symbol/intraday', …)`.
+- `App.test.tsx` — rewritten: shared `search()` helper; success → `findByRole('table',
+  { name: /AAPL/ })` + `40.2958` cell; 404 → `findByRole('alert')` `toHaveTextContent('NOPE')`;
+  502 → alert `/something went wrong/i` and `not.toHaveTextContent('TSLA')`.
+
+`npx tsc -b` clean; `npm test` **10/10**; `npm run lint` 0; `npm run build` — chunks
+now `index` 195.89 kB (62 kB gzip) + `SummaryChart` 366.52 kB (recharts, lazy);
+**the >500 kB warning is gone**.
+
+**Kept / changed / rejected**
+
+- `lazy()` uses the `.then(m => ({ default: … }))` shim because `SummaryChart` is a
+  named export.
+- `SummaryTable` deliberately sits **outside** the `<Suspense>` so the table (and its
+  tests) never wait on the recharts chunk — verified by the success integration test
+  resolving `findByRole('table')` regardless of chart load.
+- Kept a defensive `normalizeSymbol` call inside `fetchIntraday` even though the hook
+  now also normalizes — `fetchIntraday` is exported and callable directly.
+
+**Manual changes**
+
+None.
+
+---
+
+## 020 — Requirements review, README, dead-code cleanup
+
+**Prompt**
+
+> review current state against pdf, make sure all requirements are satisfied, update
+> readme, clean up dead code, rerun tests and build for frontend, report back when green
+
+**Response summary**
+
+- **Requirements check** — every PDF requirement satisfied (see the report in chat);
+  only gap was the empty root `README.md`.
+- **README.md** — written: prerequisites, two-terminal run steps, the API contract
+  (params, 200 shape, 400/404/502 table), test/lint/build commands, a layout map, and
+  a scope/config note.
+- **Dead code removed:**
+  - deleted `backend/tests/.../Unit/ScaffoldingSmokeTests.cs` (a `2+2==4` placeholder
+    whose own doc said "replace with real unit tests"; 25 real tests now exist).
+  - trimmed a trailing space at `MarketDataServiceCollectionExtensions.cs:29` and gave
+    the 15s `HttpClient.Timeout` a one-line rationale comment.
+  - `mocks/handlers.ts` — `sampleRows` de-`export`ed (nothing imports it since
+    `App.test.tsx` was rewritten).
+- **Stale docs fixed:**
+  - `NOTES.md` rewrote — the old text described `AddStandardResilienceHandler()` /
+    `HttpClient.Timeout` / `YahooFinanceOptions.RequestTimeout`, all since removed. Now
+    lists the actual hand changes (15s timeout, the two fixtures, which frontend files
+    are hand-written vs assistant-written).
+  - `frontend/README.md` replaced the Vite template boilerplate with a short pointer to
+    the root README + commands.
+- **Small polish:** `index.html` `<title>` `frontend` → `Prometheus Stock`; added
+  `frontend/.env.example` (`VITE_API_BASE_URL`); added intraday / 404 / 400 requests to
+  `PrometheusStock.Api.http`.
+
+**Green after cleanup:**
+
+- backend: `dotnet build` 0 warnings; `dotnet test` **25/25** (was 26 − the deleted placeholder).
+- frontend: `npx tsc -b` clean; `npm run lint` 0; `npm test` **10/10**; `npm run build`
+  ok — `index` 195.89 kB (62 kB gzip) + lazy `SummaryChart` 366.52 kB, no size warning.
+
+**Kept / changed / rejected**
+
+- Kept the hand-added flat `HttpClient.Timeout = 15s` as-is (didn't refactor working
+  code into config — noted as a growth item instead).
+- Left `HealthEndpointTests` — `/health` is a real liveness endpoint, not scaffolding.
+- Rewrote `NOTES.md` rather than appending a correction, since the existing content was
+  describing code that no longer exists.
+
+**Manual changes**
+
+None.

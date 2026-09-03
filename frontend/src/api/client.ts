@@ -2,8 +2,13 @@ import { type DailySummary, RequestFailedError, SymbolNotFoundError } from './ty
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:5136'
 
+/** Canonical symbol form — sent to the API and shown in the UI. */
+export function normalizeSymbol(symbol: string): string {
+  return symbol.trim().toUpperCase()
+}
+
 export async function fetchIntraday(symbol: string): Promise<DailySummary[]> {
-  const normalized = symbol.trim().toUpperCase()
+  const normalized = normalizeSymbol(symbol)
 
   let response: Response
   try {
@@ -15,7 +20,11 @@ export async function fetchIntraday(symbol: string): Promise<DailySummary[]> {
     throw new RequestFailedError('Could not reach the server')
   }
 
-  if (response.status === 404) throw new SymbolNotFoundError(normalized)
+  // 404 (unknown symbol) and 400 (symbol fails the API's format rules) are both
+  // "that symbol won't work, try another" as far as the user is concerned.
+  if (response.status === 404 || response.status === 400) {
+    throw new SymbolNotFoundError(normalized)
+  }
   if (!response.ok) throw new RequestFailedError(`Server responded ${response.status}`)
 
   try {

@@ -3,3 +3,15 @@
 ### Health — liveness probe
 GET {{PrometheusStock.Api_HostAddress}}/health
 Accept: application/json
+
+### Intraday daily summary for a symbol
+GET {{PrometheusStock.Api_HostAddress}}/api/stocks/TSLA/intraday
+Accept: application/json
+
+### Unknown symbol — 404 problem+json
+GET {{PrometheusStock.Api_HostAddress}}/api/stocks/NOTAREALSYMBOLXYZ/intraday
+Accept: application/json
+
+### Malformed symbol — 400 problem+json
+GET {{PrometheusStock.Api_HostAddress}}/api/stocks/@@@/intraday
+Accept: application/json
