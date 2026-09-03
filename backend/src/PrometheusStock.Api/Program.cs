@@ -1,28 +1,41 @@
+using PrometheusStock.Api.Common;
 using PrometheusStock.Api.Extensions;
+using PrometheusStock.Api.Features.Intraday;
+
+const string FrontendCorsPolicy = "frontend";
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+// Domain exceptions -> problem+json (see ProblemDetailsExceptionHandler).
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
+
+builder.Services.AddCors(options => options.AddPolicy(
+    FrontendCorsPolicy,
+    policy => policy
+        .WithOrigins("http://localhost:5173")
+        .AllowAnyHeader()
+        .AllowAnyMethod()));
 
 // Market-data slice: pure intraday aggregator + Yahoo-backed IStockDataProvider (typed HttpClient).
 builder.Services.AddMarketData(builder.Configuration);
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// First in the pipeline so every downstream failure becomes a problem+json response.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
+app.UseCors(FrontendCorsPolicy);
 
-app.UseAuthorization();
-
-app.MapControllers();
+app.MapIntradayEndpoints();
 
 // Liveness probe. Deliberately dependency-free so it stays cheap and always available.
 app.MapGet("/health", () => TypedResults.Ok(new { status = "healthy" }))

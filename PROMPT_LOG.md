@@ -486,3 +486,276 @@ State: `dotnet build` 0 warnings. `dotnet test` → **9 pass** (2 smoke + 7 aggr
 **Manual changes**
 
 None.
+
+---
+
+## 010 — Reconcile the retry tests with no-resilience
+
+**Prompt**
+
+> Reconcile the two retry tests with the no-resilience decision.
+
+**Intent**
+
+After entry 008 removed `AddStandardResilienceHandler`, two entry-007 tests were
+inconsistent: one could never pass, one no longer proved anything. Bring the
+`YahooFinanceClient` spec back in line with a client that makes exactly one call.
+
+**Response summary**
+
+`Integration/YahooFinanceClientTests.cs`:
+
+- Deleted `A_404_is_not_retried`; moved its `ChartRequestCount.ShouldBe(1)` assertion
+  into `Raw_404_is_translated_to_SymbolNotFoundException`.
+- Renamed `Repeated_500_is_retried_then_translated_to_UpstreamException` →
+  `A_500_is_translated_to_UpstreamException_after_a_single_request`; flipped
+  `ChartRequestCount.ShouldBeGreaterThan(1)` → `ShouldBe(1)`; dropped the
+  "the resilience pipeline retried" comment; stub body `"upstream boom"` → `"server error"`.
+- Removed the dead `["YahooFinance:Resilience:Retry:Delay"]` key from `CreateProvider`.
+- Reworded the class docstring: no more "resilience pipeline"; now states the MVP client
+  has no retry layer and every call hits the upstream once.
+
+`YahooFinanceClientTests` is now 6 facts. `dotnet build` 0 warnings; `dotnet test`
+9 pass / 6 red (the 6 still `NotImplementedException`, awaiting the client).
+
+**Kept / changed / rejected**
+
+- **Merged rather than kept two tests:** the "exactly one request / no retry" property
+  is now asserted on both failure paths (404 and 500) plus the happy path, so a
+  standalone `A_404_is_not_retried` was pure redundancy once retries were gone.
+- Kept `Unparseable_body_is_translated_to_UpstreamException` without a request-count
+  assertion — that test is about parse failure, not call count.
+
+**Manual changes**
+
+None.
+
+---
+
+## 011 — DST-straddling timestamp test
+
+**Prompt**
+
+> Add a test using yahoo-chart-dst.json (already exists) (5 bars straddling the 2 Nov
+> 2025 EDT→EST change). Assert: bars 0–1 carry offset -04:00, bars 2–4 carry -05:00;
+> bar 0 (UTC Nov 2 03:45) has local Day = Nov 1. The client converts each timestamp
+> with TimeZoneInfo.FindSystemTimeZoneById(meta.exchangeTimezoneName) +
+> TimeZoneInfo.ConvertTime, per-timestamp — not the scalar gmtoffset. Show me the
+> revised test file, stop.
+
+**Intent**
+
+Pin that day-bucketing uses a real per-timestamp zone conversion, so bars on either
+side of a DST change get the right offset (and the right calendar day) — the scalar
+`meta.gmtoffset` is only correct for the half of the payload captured before the change.
+
+**Response summary**
+
+- Added `Each_timestamp_is_converted_in_the_exchange_zone_across_a_dst_change` to
+  `YahooFinanceClientTests.cs` plus a `DstFixturePath` field → `Fixtures/yahoo-chart-dst.json`.
+  Asserts 5 bars; `bars[0..1].Timestamp.Offset == -04:00`, `bars[2..4] == -05:00`;
+  `DateOnly.FromDateTime(bars[0].Timestamp.Date) == 2025-11-01`. Bars sorted by
+  timestamp in the test so it doesn't depend on the client's output order.
+- `dotnet build` 0 warnings.
+
+**Blocker surfaced — the existing fixture is unusable:**
+`backend/tests/PrometheusStock.Tests/Fixtures/yahoo-chart-dst.json` (untracked, 206 B)
+is a Yahoo **error** envelope — `"15m data not available … must be within the last 60
+days"`. A live capture of Nov 2025 15m data is impossible as of 2026-09-03. Did **not**
+overwrite it (contradicts its description, not mine to clobber). Proposed a
+hand-authored replacement in chat: 5 bars at UTC epochs
+`1762055100 / 1762062300 / 1762064100 / 1762065000 / 1762066800`,
+`meta.exchangeTimezoneName = "America/New_York"`, `meta.gmtoffset = -14400` (EDT for the
+whole payload, deliberately wrong for bars 2–4). Awaiting an OK to write it, or a real
+capture.
+
+**Kept / changed / rejected**
+
+- **Blocked on** the fixture — shown, not written.
+- Sorted the returned bars by `Timestamp` in the test rather than assuming the client
+  preserves payload order; isolates this test to the conversion concern.
+- Asserted only what the prompt specified (5 offsets + bar-0 day), not the invented
+  quote values in the proposed fixture.
+
+**Manual changes** *(what was found on disk, not made by me)*
+
+- `yahoo-chart-dst.json` had been added by the user as a failed live capture (Yahoo
+  60-day limit). Left in place pending a decision on the hand-authored replacement.
+
+---
+
+## 012 — Implement YahooFinanceClient
+
+**Prompt**
+
+> Implement YahooFinanceClient. TimeZoneInfo.FindSystemTimeZoneById(meta.ExchangeTimezoneName)
+> once, then TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(ts), tz) per bar.
+> Add ExchangeTimezoneName to the Yahoo meta DTO; fall back to gmtoffset only if it's
+> null. Yahoo DTOs stay internal, prices decimal, no DateTime.Now. Show the diff.
+
+**Intent**
+
+Turn the stub into the real client against the spec pinned by entries 007/010/011 —
+map the chart payload, translate every failure, and do DST-correct per-timestamp zone
+conversion.
+
+**Response summary**
+
+- New `MarketData/Yahoo/YahooChartResponse.cs` — `internal sealed` wire DTOs
+  (`YahooChartResponse/Chart/Error/Result/Meta/Indicators/Quote`), `[JsonPropertyName]`
+  on every field. `Meta.ExchangeTimezoneName` (string?) + `Meta.Gmtoffset` (int?).
+  Prices `decimal?`, volume `long?`, timestamps `long`.
+- `YahooFinanceClient.GetIntradayBarsAsync` now: builds
+  `v8/finance/chart/{escaped symbol}?interval={Interval}&range={Range}`; `GetAsync`;
+  `HttpRequestException`→`UpstreamException`; `404`→`SymbolNotFoundException`; other
+  non-2xx→`UpstreamException` (one call, no retry); body → `JsonSerializer.Deserialize`
+  with `JsonException`→`UpstreamException`; `chart` null→`UpstreamException`;
+  `chart.result` null/empty→`SymbolNotFoundException`. `MapBars` resolves the zone once
+  via `FindSystemTimeZoneById(ExchangeTimezoneName)` (fallback to
+  `CreateCustomTimeZone` from `gmtoffset` only when the name is null), then per bar
+  `TimeZoneInfo.ConvertTime(DateTimeOffset.FromUnixTimeSeconds(ts), zone)`; null
+  high/low/volume rows skipped; `TimeZoneNotFoundException`/`InvalidTimeZoneException`
+  →`UpstreamException`. No `DateTime.Now`/`UtcNow`.
+- `JsonSerializerOptions` = `new(JsonSerializerDefaults.Web)` static.
+
+State: `dotnet build` 0 warnings. `dotnet test` → **15 pass / 1 fail**. The 6
+implementable `YahooFinanceClientTests` are green (mapping, request shape, all four
+error translations). The lone failure is
+`Each_timestamp_is_converted_…_dst_change`: the on-disk `yahoo-chart-dst.json` is still
+the error envelope, so the client (correctly) maps it to `SymbolNotFoundException`.
+That test goes green once the entry-011 fixture is written / a real capture lands.
+
+**Kept / changed / rejected**
+
+- **Changed** the body-read approach: `ReadAsStringAsync` + `JsonSerializer.Deserialize`
+  rather than `ReadFromJsonAsync`, so a non-JSON `Content-Type` (HTML error page) still
+  yields a `JsonException`→`UpstreamException` instead of a `NotSupportedException`.
+- **Added, beyond the prompt:** `chart == null` → `UpstreamException` (distinct from
+  `result == null` → `SymbolNotFoundException`); a `ValueAt` helper that also guards the
+  quote arrays being shorter than `timestamp`; `TimeZoneNotFound`/`InvalidTimeZone`
+  wrapped as `UpstreamException`. All defensive, none tested yet.
+- **Kept** `ExchangeTimezoneName` fallback strictly literal — falls back on `null`
+  only; a present-but-unresolvable id throws (→ `UpstreamException`), not silently uses
+  `gmtoffset`.
+- **Did not** write `yahoo-chart-dst.json` — still unapproved.
+
+**Manual changes**
+
+None.
+
+---
+
+## 013 — Wire the intraday endpoint, test-first
+
+**Prompt**
+
+> Wire the intraday endpoint, test-first. GET /api/stocks/{symbol}/intraday (minimal
+> API). Handler: validate the symbol with a regex (^[A-Za-z0-9.\-^=]{1,15}$) → 400
+> before any upstream call; else IStockDataProvider.GetIntradayBarsAsync →
+> IIntradayAggregator.Aggregate → map each DailyAggregate to a response record
+> { string Day = Day.ToString("yyyy-MM-dd"), decimal LowAverage = Math.Round(_, 4,
+> MidpointRounding.ToEven), decimal HighAverage = same, long Volume }, camelCase JSON.
+
+**Intent**
+
+Expose the pipeline over HTTP: routing + a cheap local guard that short-circuits bad
+symbols before any network call, then provider → aggregator → rounded response DTO.
+
+**Response summary**
+
+- `Integration/IntradayEndpointTests.cs` (written first, 6 cases red on 404):
+  `Returns_rounded_camelCase_aggregates_in_aggregator_order` (200; camelCase keys;
+  `2.00025→2.0002`, `2.00035→2.0004`; `day == "2009-01-30"`; aggregator order kept);
+  `Rejects_an_invalid_symbol_with_400_before_any_upstream_call` `[Theory]` (`@@`,
+  `a b`, 16 chars → 400 + `_provider.DidNotReceiveWithAnyArgs()`);
+  `Accepts_punctuated_symbols_and_forwards_them_verbatim` `[Theory]` (`BRK-B`, `^GSPC`
+  → 200 + `_provider.Received(1).GetIntradayBarsAsync("^GSPC", …)`).
+  `WebApplicationFactory` + `ConfigureTestServices`; `IStockDataProvider` and
+  `IIntradayAggregator` are NSubstitutes.
+- `Features/Intraday/IntradayEndpoints.cs` — `MapIntradayEndpoints()` → `MapGet`
+  `/api/stocks/{symbol}/intraday`; handler returns
+  `Results<Ok<IReadOnlyList<IntradayResponse>>, ValidationProblem>`; source-generated
+  `[GeneratedRegex(@"^[A-Za-z0-9.\-^=]{1,15}$")]`; no match →
+  `TypedResults.ValidationProblem` before touching the provider.
+- `Features/Intraday/IntradayResponse.cs` — `public sealed record (string Day,
+  decimal LowAverage, decimal HighAverage, long Volume)` + `FromAggregate`
+  (`ToString("yyyy-MM-dd", InvariantCulture)`, `Math.Round(_, 4, ToEven)`).
+- `Program.cs` — `+using …Features.Intraday; +app.MapIntradayEndpoints();`
+
+State: `dotnet build` 0 warnings; `dotnet test` **22/22 pass** (the DST test now green —
+the user committed a real `yahoo-chart-dst.json` in `b44f533`).
+
+**Kept / changed / rejected**
+
+- **Added, beyond the prompt:** `CultureInfo.InvariantCulture` on the `yyyy-MM-dd`
+  format (deterministic regardless of server culture); a typed
+  `Results<Ok<…>, ValidationProblem>` union rather than bare `IResult` (compile-checked
+  contract, better OpenAPI); `.WithName("GetIntraday")`.
+- **Not done (flagged):** `SymbolNotFoundException` / `UpstreamException` from the
+  provider are still unhandled → 500. An `IExceptionHandler` mapping them to 404 / 502
+  is the next step.
+- Regex is source-generated (`partial` class) rather than a `new Regex(...)` field —
+  no per-call allocation, analyzer-friendly.
+
+**Manual changes** *(found on disk, not mine)*
+
+- `b44f533 "yfinance wiring, timezone fix"` committed entries 007–012's work plus a
+  real pretty-printed `yahoo-chart-dst.json` (5 DST bars, `gmtoffset -14400` for the
+  whole payload, `exchangeTimezoneName` present) — the entry-011 test now passes.
+- `MarketDataServiceCollectionExtensions.cs` gained `httpClient.Timeout =
+  TimeSpan.FromSeconds(15)` (reasonable now that there's no resilience layer); it has a
+  stray trailing space on that line vs `.editorconfig`.
+
+---
+
+## 014 — Exception handler, CORS, pipeline cleanup
+
+**Prompt**
+
+> IExceptionHandler — SymbolNotFoundException → 404, UpstreamException → 502, both as
+> ProblemDetails (application/problem+json). No detail on the 502 — don't leak
+> internals on a 5xx. Register AddProblemDetails(), AddExceptionHandler<…>(),
+> UseExceptionHandler() near the top. CORS — a policy allowing http://localhost:5173,
+> plus UseCors(…). Remove the dead controller wiring (AddControllers,
+> UseAuthorization, MapControllers). Optional: drop UseHttpsRedirection(). Tests:
+> provider throws SymbolNotFoundException → 404 + problem+json; throws UpstreamException
+> → 502 with no detail; a preflight from http://localhost:5173 comes back with the
+> Access-Control-Allow-Origin header. Then: final backend state report.
+
+**Response summary**
+
+Tests first (3 red), then:
+
+- `Common/ProblemDetailsExceptionHandler.cs` — `internal sealed`, `IExceptionHandler`.
+  `switch` on the exception: `SymbolNotFoundException` → 404 with `Detail =
+  exception.Message` (safe, it's the echoed symbol); `UpstreamException` → 502,
+  `Detail` stays null; anything else → `return false` (framework 500). Logs `LogError`
+  with the real exception for ≥500, `LogInformation` otherwise, then
+  `IProblemDetailsService.TryWriteAsync`.
+- `Program.cs` rewritten: `+AddProblemDetails()`, `+AddExceptionHandler<…>()`,
+  `+AddCors(policy "frontend" → WithOrigins("http://localhost:5173").AllowAnyHeader().AllowAnyMethod())`;
+  pipeline `UseExceptionHandler()` first, then `MapOpenApi` (dev), `UseCors("frontend")`,
+  endpoints. **Removed** `AddControllers()`, `UseAuthorization()`, `MapControllers()`,
+  `UseHttpsRedirection()`.
+- Tests: two `[Fact]`s added to `IntradayEndpointTests` (`.ThrowsAsync` on the
+  substitute → 404 problem+json / 502 with body asserted to contain neither "Yahoo" nor
+  "503" and no `detail`), new `CorsTests.cs` (`IClassFixture<WebApplicationFactory>`,
+  raw `OPTIONS` preflight → `Access-Control-Allow-Origin: http://localhost:5173`).
+
+`dotnet build` 0 warnings. `dotnet test` **25/25 pass** (~0.7 s).
+
+**Kept / changed / rejected**
+
+- **Added, beyond the prompt:** server-side logging in the handler (a 502 that returns
+  nothing to the client must still be diagnosable); a `payload.Chart == null` →
+  `UpstreamException` split already lived in the client. CORS origin kept a literal
+  (matches the prompt); noted "move to config" as a growth item rather than doing it.
+- **Rejected** putting the exception→status map in the endpoint handler — a single
+  `IExceptionHandler` covers every current and future endpoint and keeps handlers to
+  their happy path.
+- `UseHttpsRedirection()` dropped as suggested — it only logged "Failed to determine
+  the https port" under TestServer and adds nothing for a locally-hosted MVP.
+
+**Manual changes**
+
+None this turn.
