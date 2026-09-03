@@ -21,8 +21,7 @@ so an internet connection is required.
 
 ## Run it
 
-### 1 — Backend (terminal 1)
-
+### 1 — Backend 
 ```bash
 cd backend
 dotnet run --project src/PrometheusStock.Api
@@ -34,7 +33,7 @@ Serves on **http://localhost:5136**. Quick check:
 curl http://localhost:5136/api/stocks/TSLA/intraday
 ```
 
-### 2 — Frontend (terminal 2)
+### 2 — Frontend 
 
 ```bash
 cd frontend
