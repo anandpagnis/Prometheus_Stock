@@ -7,7 +7,7 @@ export default function App() {
 
   return (
     <main>
-      <h1>Prometheus Stock</h1>
+      <h1>Prometheus Stock Dashboard - Take Home Assessment - Anand Pagnis</h1>
       <p>Intraday high/low averages and volume, grouped by trading day.</p>
       <SymbolSearch onSubmit={load} busy={state.status === 'loading'} />
       <IntradayResults state={state} />

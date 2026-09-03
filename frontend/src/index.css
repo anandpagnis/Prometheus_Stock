@@ -1,0 +1,262 @@
+/* Plain CSS, no framework. Cool-neutral palette; light by default with a
+   prefers-color-scheme: dark override. All colour goes through custom properties. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f5;
+  --text: #1b2230;
+  --text-muted: #5b6675;
+  --border: #dfe3ea;
+  --hover: #f1f3f7;
+  --accent: #3a5bd9;
+  --accent-hover: #2f4cc0;
+  --accent-contrast: #ffffff;
+  --focus-ring: #3a5bd9;
+  --alert-bg: #fdeceb;
+  --alert-border: #f3c4c1;
+  --alert-text: #98302b;
+  --pos: #157347;
+  --neg: #b02a37;
+  --shadow: 0 1px 2px rgba(17, 24, 39, 0.06), 0 2px 6px rgba(17, 24, 39, 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b;
+    --surface: #1a1e26;
+    --surface-2: #222834;
+    --text: #e6e9ef;
+    --text-muted: #99a3b2;
+    --border: #2b313c;
+    --hover: #232936;
+    --accent: #5c78e6;
+    --accent-hover: #6f88ec;
+    --accent-contrast: #0f1216;
+    --focus-ring: #7f97ee;
+    --alert-bg: #35211f;
+    --alert-border: #5a302d;
+    --alert-text: #f0a9a4;
+    --pos: #3fb27f;
+    --neg: #e5737f;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- layout -------------------------------------------------------------- */
+
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 4rem;
+}
+
+h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+main > p {
+  margin: 0 0 1.5rem;
+  color: var(--text-muted);
+}
+
+/* ---- search form ------------------------------------------------------------ */
+
+form[role="search"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 1.5rem 0;
+}
+
+form[role="search"] label {
+  flex-basis: 100%;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+form[role="search"] input {
+  min-width: 12rem;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+form[role="search"] input::placeholder {
+  color: var(--text-muted);
+}
+
+form[role="search"] button {
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent-contrast);
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+form[role="search"] button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+form[role="search"] button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- status / error ---------------------------------------------------------- */
+
+[role="status"] {
+  color: var(--text-muted);
+}
+
+[role="alert"] {
+  margin: 1.5rem 0;
+  padding: 0.75rem 1rem;
+  color: var(--alert-text);
+  background: var(--alert-bg);
+  border: 1px solid var(--alert-border);
+  border-radius: 8px;
+}
+
+/* ---- table ---------------------------------------------------------------- */
+
+table {
+  width: 100%;
+  margin: 1.5rem 0;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+caption {
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  text-align: left;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+thead th {
+  padding: 0.55rem 1rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+thead th:not(:first-child) {
+  text-align: right;
+}
+
+tbody th,
+tbody td {
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:last-child th,
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody th[scope="row"] {
+  font-weight: 500;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+tbody td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+tbody tr:hover th,
+tbody tr:hover td {
+  background: var(--hover);
+}
+
+/* ---- period summary ---------------------------------------------------------- */
+
+.period-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+.stat {
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.stat-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  display: block;
+  margin: 0.15rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-sub {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.stat-value.pos {
+  color: var(--pos);
+}
+
+.stat-value.neg {
+  color: var(--neg);
+}

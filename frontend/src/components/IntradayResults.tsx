@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 
 import type { IntradayState } from '../hooks/useIntradayData'
+import { PeriodSummary } from './PeriodSummary'
 import { SummaryTable } from './SummaryTable'
 
 // recharts is large and only needed on the success branch — keep it out of the
@@ -28,6 +29,7 @@ export function IntradayResults({ state }: { state: IntradayState }) {
         <p>No intraday data available for {state.symbol}.</p>
       ) : (
         <>
+          <PeriodSummary symbol={state.symbol} rows={state.rows} />
           <Suspense fallback={<p>Loading chart…</p>}>
             <SummaryChart symbol={state.symbol} rows={state.rows} />
           </Suspense>

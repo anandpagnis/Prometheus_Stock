@@ -1060,3 +1060,199 @@ None.
 **Manual changes**
 
 None.
+
+---
+
+## 021 — Plan a shadcn/ui upgrade
+
+**Prompt**
+
+> plan out UI upgrade using shadcn
+
+**Intent**
+
+The frontend is functional but entirely unstyled. Wanted a phased, test-safe plan for
+adopting shadcn/ui before touching anything.
+
+**Response summary**
+
+Produced a 3-phase plan (full detail in chat):
+
+- **Phase 0 — infra:** Tailwind v4 (`@tailwindcss/vite`, no config file), `@/` path
+  alias in vite + tsconfig ×2, `npx shadcn init` (writes `components.json`,
+  `lib/utils.ts`, token CSS), `import './index.css'` in `main.tsx`, add
+  `src/components/ui/**` to eslint `globalIgnores` (vendored code, trips
+  `react-refresh/only-export-components`, different quote style).
+- **Phase 1:** `shadcn add button input label card table alert skeleton chart`
+  (~15–25 KB JS; Chart reuses the existing recharts).
+- **Phase 2 — migrate 5 components:** `SymbolSearch` (Label/Input/Button, logic
+  untouched), `SummaryTable` (`Table*` primitives, **day stays `<th scope="row">`**,
+  caption keeps the symbol), `SummaryChart` (`ChartContainer` + `--chart-*` vars, stays
+  `lazy()`), `IntradayResults` (Skeleton loading w/ `role="status"`, `Alert
+  variant="destructive"` keeping symbol-in-text for not-found, `Card` success), `App`
+  (centered container + header).
+- **Phase 3 — polish:** `prefers-color-scheme` dark, `tabular-nums` right-aligned
+  numerics, responsive table scroll, chart tick formatting.
+
+Called the test impact **0–2 changes** (roles/names preserved; the two things to keep
+are `<th scope="row">` and `role="status"` on the loader), listed risks (3-place alias,
+v4-not-v3, `verbatimModuleSyntax`, bundle, vendored style), and ended with 5 decisions
+to confirm — recommended v4 / controlled input / `prefers-color-scheme` only / core +
+chart theming / skeleton loading.
+
+**Kept / changed / rejected**
+
+- Planning only, no code. Recommended keeping the controlled `<input>` over shadcn
+  `Form` (react-hook-form + zod) — one field, backend already validates; flagged
+  `Form` as an optional follow-up.
+
+**Manual changes**
+
+None.
+
+---
+
+## 022 — Scope extra metrics + chart rework
+
+**Prompt**
+
+> Scope out these additional data display metrics: period high (max highAverage) /
+> period low (min lowAverage); total volume, average daily volume; trading days in the
+> window; widest day (max highAverage−lowAverage) and which date; net drift (midpoint
+> last vs first day, as % and up/down colour). Replace the two lines with a range band
+> + volume.
+
+**Intent**
+
+Spec both before building — formulas, formats, edge cases, files, tests.
+
+**Response summary** (full spec in chat)
+
+- **Metrics** — all pure derivations of the existing `DailySummary[]`; **no backend
+  change** (keeps the PDF response contract). `computePeriodSummary(rows)` pure fn in
+  `lib/periodSummary.ts` → `{ periodHigh, periodLow, totalVolume, averageDailyVolume,
+  tradingDays, widestDay: {day, spread}, netDrift: {ratio, direction} | null }`.
+  Edge cases pinned: 1-row (drift flat, high≠low), tie on widest day → earliest,
+  `mid[first] === 0` → `netDrift: null` → "—". Net drift labelled honestly as a
+  *midpoint* change (no open/close available). Colour never the only signal —
+  arrow + sign + colour. Rendered as a `Card` KPI grid above the chart in the success
+  branch; load the `dataviz` skill first.
+- **Chart** — replace 2 `<Line>` with one `ComposedChart`: `<Area dataKey="range">`
+  (tuple `[low, high]` band) + optional `<Line dataKey="mid">` + `<Bar
+  dataKey="volume">` on a muted right axis (compact ticks). `toChartSeries(rows)` pure
+  transform in `lib/chartSeries.ts`. `SummaryChart` keeps `{symbol, rows}`. Stacked
+  price-panel + volume-strip flagged as the alternative.
+- **Cross-cutting:** consolidate all `Intl.NumberFormat` into `lib/format.ts`; build
+  after shadcn Phase 0–1 so nothing is styled twice.
+- New files: `lib/{periodSummary,chartSeries,format}.ts` (+ tests),
+  `components/PeriodSummary.tsx` (+ test). Modified: `SummaryChart`,
+  `IntradayResults`, `SummaryTable`. ~1–1.5 h, test-safe (no test touches chart
+  internals; metrics get pure unit tests).
+- 6 decisions to confirm — recommended client-side / 2-dp tiles / single
+  ComposedChart / include mid line / muted volume / after shadcn 0–1.
+
+**Kept / changed / rejected**
+
+- Scoping only, no code.
+- Recommended keeping metrics client-side rather than widening the endpoint response —
+  the PDF fixes that shape.
+
+**Manual changes**
+
+None.
+
+---
+
+## 023 — Implement the period-summary metrics
+
+**Prompt**
+
+> just implement the metrics for now
+
+**Response summary** (test-first)
+
+- `src/lib/periodSummary.ts` — pure `computePeriodSummary(rows): PeriodSummary`
+  { periodHigh, periodLow, totalVolume, averageDailyVolume, tradingDays,
+  widestDay:{day,spread}, netDrift:{ratio,direction}|null }. One O(n) pass +
+  first/last midpoint drift. Empty → throws; `mid_first === 0` → `netDrift: null`;
+  widest-day ties → earliest.
+- `src/lib/format.ts` — shared module-scope `Intl.NumberFormat`: `formatPrice` (2 dp),
+  `formatVolume` (grouped), `formatSignedPercent` (`+3.24%` / `0.00%`,
+  `signDisplay: 'exceptZero'`).
+- `src/components/PeriodSummary.tsx` — `<section aria-label>` → `<dl>` of `<dt>/<dd>`;
+  net-drift `<dd data-direction>` with inline colour + `aria-hidden` arrow + signed %
+  (not colour-only); `null` drift → `—`. Rendered first in `IntradayResults` success
+  branch.
+- Tests: `periodSummary.test.ts` (6), `PeriodSummary.test.tsx` (3).
+
+`npx tsc -b` clean; `npm test` **19/19** (5 files); `npm run lint` 0; `npm run build`
+ok (`index` +2 KB → 63 KB gzip, chart chunk unchanged, no size warning).
+
+**Kept / changed / rejected**
+
+- **Scoped to just the metrics** — did **not** migrate `SummaryTable`'s own
+  `Intl.NumberFormat` instances to `lib/format.ts` (the entry-022 consolidation), and
+  did **not** touch the chart. `format.ts` only exports what `PeriodSummary` uses.
+- Plain semantic markup + one inline style for the drift colour — no CSS system yet;
+  restyle when shadcn lands.
+- Test `value()` helper switched from `getByRole('term', {name})` to
+  `getByText(label).nextElementSibling` — role `term` (`<dt>`) doesn't take its
+  accessible name from content, so the role+name query found nothing.
+
+**Manual changes**
+
+None.
+
+---
+
+## 024 — Plain-CSS styling pass
+
+**Prompt**
+
+> Don't use shadcn. Add one src/index.css (plain CSS, no framework), re-add
+> import './index.css' to main.tsx. Custom properties with light :root + @media
+> (prefers-color-scheme: dark). Neutral cool palette, system-ui, 1px borders + soft
+> shadow on cards/table. Style by element: centered main (max-width 880px), h1, the
+> form (accent button, focus ring), [role="alert"] tinted box, [role="status"] muted.
+> Table: full-width, uppercase muted header, row-hover, numeric cols right-aligned +
+> tabular-nums, bold caption bar. Add hooks to PeriodSummary: .period-summary (grid
+> auto-fit minmax(150px,1fr)), .stat cards (.stat-label/.stat-value/.stat-sub,
+> .pos/.neg on drift). No logic changes. Show the diff.
+
+**Response summary**
+
+- `src/index.css` (new) — token block (`:root` light + `@media (prefers-color-scheme:
+  dark)` override; cool-neutral), `box-sizing` reset, `body` (`system-ui`), then
+  element rules: `main` (880px centred), `h1`, `main > p`, `form[role="search"]`
+  (flex, accent `button`, `:focus-visible` ring), `[role="status"]` muted,
+  `[role="alert"]` tinted box, `table` (full-width, 1px border + shadow, radius via
+  `overflow:hidden`), `caption` (bold bar on `--surface-2`), `thead th` (uppercase
+  muted, right-aligned except first), `tbody td` (right + `tabular-nums`), `tbody
+  th[scope=row]` left, row-hover; `.period-summary` grid `repeat(auto-fit,
+  minmax(150px,1fr))`, `.stat` card, `.stat-label` / `.stat-value` / `.stat-sub`,
+  `.stat-value.pos|.neg`.
+- `main.tsx` — `+import './index.css'`.
+- `PeriodSummary.tsx` — class hooks only: `.period-summary` on the `<dl>`; `Stat` gains
+  a `sub?` prop rendering `<span class="stat-sub">` (Widest day's date moved out of the
+  parenthetical into the sub-line); `.stat` / `.stat-label` / `.stat-value` throughout;
+  drift `<dd>` swaps the inline `style={{color}}` (and `DRIFT_COLOR`) for
+  `className="stat-value pos|neg"` via a new `DRIFT_TONE` map. `data-direction` kept.
+  No computed value or control-flow change.
+
+Gates: `tsc -b` 0 (`*.css` typed by `vite/client`), `eslint` 0, `vitest` **19/19**
+(CSS not applied in jsdom → role/text queries unaffected; "34.00"+"2026-01-06" still
+substring-match the split `<dd>`), `vite build` ok — `index.css` 3.62 kB / 1.28 kB
+gzip, JS unchanged.
+
+**Kept / changed / rejected**
+
+- No shadcn / no Tailwind, as instructed — single hand-written stylesheet.
+- Removed the entry-023 inline drift colour + `DRIFT_COLOR` const (replaced by
+  `.pos`/`.neg`) — cleaner and what the prompt asked for; still not colour-only (arrow
+  glyph + signed `%`).
+- Table radius via `overflow:hidden` with `border-collapse:collapse` (corners clip
+  cleanly) rather than switching to `border-collapse:separate`.
+
+**Manual changes**
+
+None.
